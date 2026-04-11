@@ -1,0 +1,17 @@
+{
+	"name": "client",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"devDependencies": {
+		"@types/bun": "latest",
+		"@types/sdp-transform": "^2.15.0"
+	},
+	"peerDependencies": {
+		"typescript": "^5.9.3"
+	},
+	"dependencies": {
+		"bs58": "^6.0.0",
+		"mqtt": "^5.15.1"
+	}
+}

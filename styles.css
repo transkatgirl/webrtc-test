@@ -1,0 +1,58 @@
+body#app {
+	margin: 0;
+	background-color: black;
+}
+
+body:not(#app) {
+	margin: 1lh;
+}
+
+.gallery {
+	display: grid;
+	grid-template-columns: 1fr;
+	grid-template-rows: 1fr;
+	grid-auto-columns: 1fr;
+	width: 100vw;
+	height: 100vh;
+}
+
+.gallery video {
+	width: 100%;
+	height: 100%;
+	overflow: auto;
+}
+
+video.preview {
+	width: 100vw;
+	height: 100vh;
+}
+
+input[type="text"] {
+	font-family: monospace;
+}
+
+input[type="text"]:invalid {
+	background-color: lightpink;
+}
+
+pre {
+	background-color: gray;
+	padding: 0.5em;
+	overflow: auto;
+}
+
+video {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+.settings-overlay {
+	position: absolute;
+	bottom: 1lh;
+	right: 1lh;
+	max-width: calc(100vw - 2lh);
+	max-height: calc(100vh - 2lh);
+	color: white;
+	background-color: rgba(0, 0, 0, 0.5);
+	padding: 1em;
+}

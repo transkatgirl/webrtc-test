@@ -197,11 +197,6 @@ async function launchApp(
 		iceServers = defaultIceServers;
 	}
 
-	const constraints = {
-		video: true,
-		audio: true,
-	};
-
 	if (role == Role.Sender) {
 		await launchSender(credentials, mqttEndpoint, iceServers);
 	}
@@ -229,10 +224,6 @@ async function launchSender(
 	video.srcObject = stream;
 	video.classList.add("preview");
 	document.body.appendChild(video);
-
-	const settings = document.createElement("div");
-	settings.classList.add("settings-overlay");
-	document.body.appendChild(settings);
 
 	(globalThis as any).stream = stream;
 	(globalThis as any).room = new Room(

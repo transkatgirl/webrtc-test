@@ -230,8 +230,6 @@ async function launchSender(
 		mqttEndpoint,
 		credentials,
 		{
-			bundlePolicy: "max-bundle",
-			iceCandidatePoolSize: 10,
 			iceServers,
 		},
 		(peerId, peer) => {
@@ -295,7 +293,6 @@ async function launchReceiver(
 		mqttEndpoint,
 		credentials,
 		{
-			iceCandidatePoolSize: 10,
 			iceServers,
 		},
 		(peerId, peer) => {

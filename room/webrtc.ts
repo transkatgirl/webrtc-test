@@ -1,7 +1,14 @@
-// Taken from a larger project; Sorry for the mess!
+// Taken from psychosis.live
 
 import mqtt from "mqtt";
-import { deriveKey, hashText, MqttRoom, selfId } from "./core";
+import {
+	deriveKey,
+	hashText,
+	idFromString,
+	idToString,
+	MqttRoom,
+	selfId,
+} from "./core";
 
 export interface RoomCredentials {
 	topic: string;
@@ -54,7 +61,16 @@ export class Room {
 			peerId: string,
 			message: WebRTCMessage
 		) => WebRTCMessage = (_, m) => m,
+		mungeOffer: (
+			peerId: string,
+			message: RTCSessionDescriptionInit
+		) => RTCSessionDescriptionInit = (_, m) => m,
+		mungeAnswer: (
+			peerId: string,
+			message: RTCSessionDescriptionInit
+		) => RTCSessionDescriptionInit = (_, m) => m,
 		interval: number = 1_500,
+		quiet: boolean = false,
 		timeout: number = 15_000
 	) {
 		this.id = nextRoomId;
@@ -79,7 +95,7 @@ export class Room {
 			},
 			async (message) => {
 				try {
-					const peerId = message.from.toString();
+					const peerId = idToString(message.from);
 
 					const sendResponse = async (response: WebRTCMessage) => {
 						await this.room.send({
@@ -102,12 +118,14 @@ export class Room {
 									await sendResponse({});
 								}
 							},
-							timeout
+							timeout,
+							(m) => mungeOffer(peerId, m),
+							(m) => mungeAnswer(peerId, m)
 						);
 						configurePeer(peerId, this.peers[peerId]);
 					}
 
-					if (message.to == selfId && message.payload) {
+					if (message.to === selfId && message.payload) {
 						const pc = this.peers[peerId];
 
 						if (pc) {
@@ -138,9 +156,11 @@ export class Room {
 
 				onScan(this.peers);
 
-				await this.room.send({
-					from: selfId,
-				});
+				if (!quiet) {
+					await this.room.send({
+						from: selfId,
+					});
+				}
 			} catch (err) {
 				console.error(err);
 			}
@@ -153,7 +173,7 @@ export class Room {
 		for (const [peerId, peer] of Object.entries(this.peers)) {
 			await this.room.send({
 				from: selfId,
-				to: BigInt(peerId),
+				to: idFromString(peerId),
 				payload: this.encoder.encode(JSON.stringify({})),
 			});
 		}
@@ -176,23 +196,33 @@ export interface WebRTCMessage {
 
 export class Peer {
 	public pc: RTCPeerConnection | null;
-	public metadata: any = {};
+	public metadata: Record<string, any> = {};
 	polite: boolean;
 	makingOffer = false;
 	ignoreOffer = false;
 	isSettingRemoteAnswerPending = false;
 	beforeClose: (pc: Peer) => void;
+	mungeAnswer: (
+		message: RTCSessionDescriptionInit
+	) => RTCSessionDescriptionInit;
 	timeoutId: number | undefined;
 	public constructor(
 		configuration: RTCConfiguration,
 		polite: boolean,
 		sendMessage: (message: WebRTCMessage) => Promise<void>,
 		beforeClose: (pc: Peer) => void,
-		timeout: number = 15_000
+		timeout: number = 15_000,
+		mungeOffer: (
+			message: RTCSessionDescriptionInit
+		) => RTCSessionDescriptionInit = (m) => m,
+		mungeAnswer: (
+			message: RTCSessionDescriptionInit
+		) => RTCSessionDescriptionInit = (m) => m
 	) {
 		this.pc = new RTCPeerConnection(configuration);
 		this.polite = polite;
 		this.beforeClose = beforeClose;
+		this.mungeAnswer = mungeAnswer;
 		this.pc.onicecandidate = async ({ candidate }) => {
 			if (!this.pc || !candidate?.candidate) return;
 
@@ -253,7 +283,8 @@ export class Peer {
 
 			try {
 				this.makingOffer = true;
-				await this.pc.setLocalDescription();
+				const offer = await this.pc.createOffer();
+				await this.pc.setLocalDescription(mungeOffer(offer));
 				await sendMessage({
 					desc: this.pc.localDescription?.toJSON(),
 				});
@@ -289,7 +320,8 @@ export class Peer {
 			this.isSettingRemoteAnswerPending = false;
 
 			if (message.desc.type === "offer") {
-				await this.pc.setLocalDescription();
+				const answer = await this.pc.createAnswer();
+				await this.pc.setLocalDescription(this.mungeAnswer(answer));
 				await sendMessage({
 					desc: this.pc.localDescription?.toJSON(),
 				});

@@ -6,7 +6,7 @@ import {
 	Room,
 	type RoomCredentials,
 } from "./room/webrtc";
-import { selfId, setSelfId } from "./room/core";
+import { idFromString, idToString, selfId, setSelfId } from "./room/core";
 
 const defaultMqttEndpoint = "wss://broker.emqx.io:8084/mqtt";
 const defaultIceServers: RTCIceServer[] = [
@@ -176,7 +176,7 @@ async function launchApp(
 		setSelfId(selfId - 1n); // Receivers have even IDs
 	}
 
-	console.log(`role = ${role}, peer ID = ${selfId}`);
+	console.log(`role = ${role}, peer ID = ${idToString(selfId)}`);
 
 	const credentials = await createRoomCredentials(roomId, password);
 
@@ -234,12 +234,6 @@ async function launchSender(
 	settings.classList.add("settings-overlay");
 	document.body.appendChild(settings);
 
-	await inputOverlay(settings, stream);
-
-	navigator.mediaDevices.addEventListener("devicechange", async () => {
-		await inputOverlay(settings, stream);
-	});
-
 	(globalThis as any).stream = stream;
 	(globalThis as any).room = new Room(
 		mqttEndpoint,
@@ -250,7 +244,7 @@ async function launchSender(
 			iceServers,
 		},
 		(peerId, peer) => {
-			if (peer.pc && BigInt(peerId) % 2n == 0n) {
+			if (peer.pc && idFromString(peerId) % 2n == 0n) {
 				// only configure alive receiver peers
 				stream.getTracks().forEach((track) => {
 					if (!peer.pc) return;
@@ -261,26 +255,31 @@ async function launchSender(
 				});
 			}
 		},
-		(_peerId, _peer) => {}
+		(_peerId, _peer) => {},
+		() => {},
+		(_, m) => m,
+		(_, m) => m,
+		(_, m) => m,
+		(_, m) => m,
+		2_000,
+		true
 	);
 	stream.onaddtrack = async (event) => {
 		for (const [peerId, peer] of Object.entries(
 			((globalThis as any).room as Room).peers
 		)) {
-			if (!peer.pc || BigInt(peerId) % 2n != 0n) continue; // skip dead peers and sender peers
+			if (!peer.pc || idFromString(peerId) % 2n != 0n) continue; // skip dead peers and sender peers
 
 			peer.pc.addTransceiver(event.track, {
 				streams: [stream],
 			});
 		}
-
-		await inputOverlay(settings, stream);
 	};
 	stream.onremovetrack = async (event) => {
 		for (const [peerId, peer] of Object.entries(
 			((globalThis as any).room as Room).peers
 		)) {
-			if (!peer.pc || BigInt(peerId) % 2n != 0n) continue; // skip dead peers and sender peers
+			if (!peer.pc || idFromString(peerId) % 2n != 0n) continue; // skip dead peers and sender peers
 
 			for (const transceiver of peer.pc.getTransceivers()) {
 				if (transceiver.sender.track?.id == event.track.id) {
@@ -288,8 +287,6 @@ async function launchSender(
 				}
 			}
 		}
-
-		await inputOverlay(settings, stream);
 	};
 }
 
@@ -354,7 +351,14 @@ async function launchReceiver(
 				delete peerVideos[peerId];
 				updateGalleryStyles(videoContainer);
 			}
-		}
+		},
+		() => {},
+		(_, m) => m,
+		(_, m) => m,
+		(_, m) => m,
+		(_, m) => m,
+		1_000,
+		false
 	);
 
 	const resizeObserver = new ResizeObserver((entries) => {
@@ -419,78 +423,4 @@ function updateGalleryStyles(container: HTMLElement) {
 			container.style.gridTemplateRows = "repeat(5, 1fr)";
 		}
 	}
-}
-
-async function inputOverlay(overlay: HTMLDivElement, stream: MediaStream) {
-	const fragment = new DocumentFragment();
-
-	const tracks = stream.getTracks();
-	tracks.sort((a, b) => (b.kind > a.kind ? 1 : a.kind > b.kind ? -1 : 0));
-	for (const track of tracks) {
-		if (track.kind == "video") {
-			fragment.appendChild(await createTrackUI(track, stream));
-		} else if (track.kind == "audio") {
-			fragment.appendChild(await createTrackUI(track, stream));
-		}
-	}
-	overlay.replaceChildren(fragment);
-}
-
-async function createTrackUI(track: MediaStreamTrack, stream: MediaStream) {
-	const trackSettings = track.getSettings();
-
-	const trackSelect = document.createElement("select");
-	const devices = await navigator.mediaDevices.enumerateDevices();
-	for (const device of devices) {
-		if (
-			(device.kind == "audioinput" && track.kind == "audio") ||
-			(device.kind == "videoinput" && track.kind == "video")
-		) {
-			const deviceOption = document.createElement("option");
-			deviceOption.value = device.deviceId;
-			deviceOption.selected = trackSettings.deviceId === device.deviceId;
-			deviceOption.innerText = device.label;
-			trackSelect.append(deviceOption);
-		}
-	}
-	trackSelect.onchange = async (event) => {
-		const streamConstraints: MediaStreamConstraints = {
-			video: false,
-			audio: false,
-		};
-		if (track.kind == "video") {
-			streamConstraints.video = {
-				deviceId: {
-					exact: (event.target as HTMLSelectElement).value,
-				},
-			};
-		} else if (track.kind == "audio") {
-			streamConstraints.audio = {
-				deviceId: {
-					exact: (event.target as HTMLSelectElement).value,
-				},
-			};
-		} else {
-			return;
-		}
-
-		const temporaryStream = await navigator.mediaDevices.getUserMedia(
-			streamConstraints
-		);
-		const newTrack = temporaryStream.getTracks()[0];
-		if (newTrack) {
-			track.stop();
-			stream.removeTrack(track);
-			stream.dispatchEvent(
-				new MediaStreamTrackEvent("removetrack", { track })
-			);
-			stream.addTrack(newTrack);
-			stream.dispatchEvent(
-				new MediaStreamTrackEvent("addtrack", { track: newTrack })
-			);
-			trackSelect.remove();
-		}
-	};
-
-	return trackSelect;
 }
